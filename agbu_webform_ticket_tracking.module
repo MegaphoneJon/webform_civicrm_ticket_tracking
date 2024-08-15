@@ -1,0 +1,87 @@
+<?php
+
+use Drupal\file_mdm_exif\Plugin\FileMetadata\Exif;
+use Drupal\Core\Session\UserSession;
+
+function agbu_webform_ticket_tracking_webform_load($entities) {
+  // Only activate when we're viewing a single webform, not, e.g. when viewing the webform list.
+  if (count($entities) !== 1) {
+    return;
+  }
+  $webform = current($entities);
+  try {
+    $civiHandler = $webform->getHandler('webform_civicrm') ?? FALSE;
+  }
+  catch (Exception $e) {
+    // This webform has no Civi handler.
+    return;
+  }
+  if (!$civiHandler) {
+    return;
+  }
+  \Drupal::service('civicrm')->initialize();
+  $civiHandlerSettings = $civiHandler->getConfiguration()['settings'];
+  // Pulls the event id and event type id as a hyphenated string from $civiHandlerSettings
+  if ($civiHandlerSettings['civicrm_1_participant_1_participant_event_id'] ?? FALSE) {
+    $eventIdAndType = current($civiHandlerSettings['civicrm_1_participant_1_participant_event_id']) ?? NULL;
+    if (!$eventIdAndType) {
+      return;
+    }
+    $eventId = (int) strtok($eventIdAndType, '-');
+    // This part is for looking up information about the event.
+    $utils = new \Drupal\webform_civicrm\Utils(\Drupal::requestStack());
+    $eventApiParams = [
+      'is_template' => 0,
+      'is_active' => 1,
+      'id' => $eventId,
+      'return' => ['max_participants', 'is_full'],
+    ];
+    $eventInfo = $utils->wf_crm_apivalues('Event', 'get', $eventApiParams);
+    // Get the max number of participants for the event.
+    $maxParticipants = $eventInfo[$eventId]['max_participants'];
+    // Get the number of available seats left for the event.
+    $availableSeats = $eventInfo[$eventId]['available_places'];
+    // If the event is full, close the form.
+    if ($eventInfo[$eventId]["is_full"]) {
+      // call the account switc her service
+      $accountSwitcher = \Drupal::service('account_switcher');
+      // switch to the admin user
+      $accountSwitcher->switchTo(new UserSession(['uid' => 1]));
+      // $webform->setPropertyOverride('status', FALSE);
+      $webform->setStatus(FALSE);
+      $accountSwitcher->switchBack();
+      // $webform->setStatus('closed');
+      $message = 'The form has ' . $availableSeats . ' available seats, the max seats is currently set to ' . $maxParticipants . ' the form will now be closed.';
+    }
+    else {
+      $accountSwitcher = \Drupal::service('account_switcher');
+      // switch to the admin user
+      $accountSwitcher->switchTo(new UserSession(['uid' => 1]));
+      // $webform->setPropertyOverride('status', TRUE);
+      $webform->setStatus(TRUE);
+      $accountSwitcher->switchBack();
+      $message = 'The form has ' . $availableSeats . ' available seats, the max seats is currently set to ' . $maxParticipants . ', the form will stay open/be reopened.';
+    }
+    // $webform->save();
+
+    // log the output to the drupal logger, to indicate if the webform is still open or closed after each submission.
+    \Drupal::logger('agbu_ticket_tracking')->info($message);
+  }
+}
+
+/**
+ * Implements hook_webform_submission_form_alter().
+ */
+function agbu_webform_ticket_tracking_webform_submission_form_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  $webform = \Drupal::entityTypeManager()->getStorage('webform')->load($form['#webform_id']);
+  // Check if the webform has a category reference field.
+  if ($webform->get('category')) {    
+    // Load the category term(s).
+    $category = $webform->get('category');
+    if (!empty($category) && !in_array($category, array('Internal', 'CTA', 'Donations'))) {
+      // Set cache to false for this webform
+      $form['#cache']['max-age'] = 0;  
+      $form['#cache']['contexts'][] = 'session';
+    }
+  }
+}

@@ -1,0 +1,5 @@
+name: 'AGBU Webform Ticket Tracking'
+type: module
+description: 'Limit webform based on total tickets sold'
+core_version_requirement: ^9 || ^10
+package: 'Custom'

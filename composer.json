@@ -1,0 +1,9 @@
+{
+    "name": "agbu_webform_ticket_tracking",
+    "type": "drupal-module",
+    "description": "Limit webform based on total tickets sold",
+    "keywords": [
+    ],
+    "homepage": "https://www.drupal.org/project/agbu_webform_ticket_tracking",
+    "minimum-stability": "dev"
+}
